@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Migration updatedAt - PilotageM00</title>
+<style>
+  body { font-family: system-ui, sans-serif; background: #eef1f5; margin: 0; padding: 40px 20px; color: #111827; }
+  .box { max-width: 860px; margin: 0 auto; background: #fff; border-radius: 12px; padding: 28px 32px; box-shadow: 0 4px 16px rgba(0,0,0,.08); }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p.sub { color: #6b7280; font-size: 13px; margin: 0 0 20px; }
+  #status { padding: 10px 14px; border-radius: 8px; background: #e8f0fe; color: #1a4fa0; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+  #status.err { background: #fdecea; color: #c62828; }
+  #status.ok { background: #e6f4ea; color: #1e7e34; }
+  button { background: #1a4fa0; color: #fff; border: none; border-radius: 8px; padding: 12px 22px; font-size: 14px; font-weight: 700; cursor: pointer; margin-right: 8px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  pre { background: #0f172a; color: #a7f3d0; border-radius: 8px; padding: 14px; font-size: 12px; max-height: 420px; overflow: auto; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>⏱️ Migration : ajout du champ updatedAt</h1>
+  <p class="sub">Ajoute un timestamp à tous les documents pour optimiser les lectures Firestore</p>
+  <div id="status">En attente de connexion...</div>
+
+  <button id="btnMigrate" disabled>🚀 Lancer la migration</button>
+  <pre id="report" style="display:none"></pre>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script>
+var FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDYo1JH1uqYX6OsHdV9QjtaG6CjP9gLQEo",
+  authDomain: "pilotagem00-prod2.firebaseapp.com",
+  projectId: "pilotagem00-prod2",
+  storageBucket: "pilotagem00-prod2.firebasestorage.app",
+  messagingSenderId: "66122797161",
+  appId: "1:66122797161:web:61468faf9ea1ffaf6cd2f8"
+};
+
+firebase.initializeApp(FIREBASE_CONFIG);
+var db = firebase.firestore();
+var statusEl = document.getElementById('status');
+var btn = document.getElementById('btnMigrate');
+var reportEl = document.getElementById('report');
+var lines = [];
+
+function log(t) { 
+  lines.push(t); 
+  reportEl.style.display = 'block'; 
+  reportEl.textContent = lines.join('\n'); 
+  reportEl.scrollTop = reportEl.scrollHeight; 
+}
+
+function setStatus(t, cls) { 
+  statusEl.textContent = t; 
+  statusEl.className = cls || ''; 
+}
+
+firebase.auth().onAuthStateChanged(function (user) {
+  if (!user) { 
+    setStatus('❌ Non connecté. Connectez-vous d\'abord sur login.html', 'err'); 
+    return; 
+  }
+  setStatus('✅ Connecté : ' + user.email);
+  btn.disabled = false;
+});
+
+btn.onclick = async function () {
+  btn.disabled = true;
+  var now = new Date().toISOString();
+  
+  try {
+    log('▶ Migration de la collection historique...');
+    var histSnap = await db.collection('historique').get();
+    var histCount = 0;
+    
+    for (var i = 0; i < histSnap.docs.length; i += 500) {
+      var batch = db.batch();
+      var slice = histSnap.docs.slice(i, i + 500);
+      
+      slice.forEach(function (doc) {
+        var data = doc.data();
+        if (!data.updatedAt) {
+          batch.update(doc.ref, { updatedAt: now });
+          histCount++;
+        }
+      });
+      
+      if (slice.length > 0) await batch.commit();
+    }
+    log('   ✔ ' + histCount + ' documents historique mis à jour');
+    
+    log('▶ Migration de la collection actions...');
+    var actsSnap = await db.collection('actions').get();
+    var actsCount = 0;
+    
+    for (var i = 0; i < actsSnap.docs.length; i += 500) {
+      var batch = db.batch();
+      var slice = actsSnap.docs.slice(i, i + 500);
+      
+      slice.forEach(function (doc) {
+        var data = doc.data();
+        if (!data.updatedAt) {
+          batch.update(doc.ref, { updatedAt: now });
+          actsCount++;
+        }
+      });
+      
+      if (slice.length > 0) await batch.commit();
+    }
+    log('   ✔ ' + actsCount + ' documents actions mis à jour');
+    
+    log('');
+    log('🎉 MIGRATION TERMINÉE !');
+    log('');
+    log('Prochaine étape : remplacer firebase.js par la version optimisée.');
+    setStatus('🎉 Migration terminée ! ' + (histCount + actsCount) + ' documents mis à jour', 'ok');
+    
+  } catch (e) {
+    console.error(e);
+    log('❌ ERREUR : ' + (e.message || e));
+    setStatus('❌ Erreur : ' + (e.message || e), 'err');
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>
